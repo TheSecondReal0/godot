@@ -196,7 +196,10 @@ void FlowContainer::_resort() {
 		}
 
 		Rect2 child_rect = Rect2(ofs, child_size);
-		if (rtl) {
+		if (reverse_fill && !vertical) {
+			child_rect.position.y = get_rect().size.y - child_rect.position.y - child_rect.size.height;
+		}
+		if ((rtl && !vertical) || ((rtl != reverse_fill) && vertical)) {
 			child_rect.position.x = get_rect().size.x - child_rect.position.x - child_rect.size.width;
 		}
 
@@ -327,6 +330,16 @@ bool FlowContainer::is_vertical() const {
 	return vertical;
 }
 
+void FlowContainer::set_reverse_fill(bool p_reverse_fill) {
+	reverse_fill = p_reverse_fill;
+	update_minimum_size();
+	_resort();
+}
+
+bool FlowContainer::is_reverse_fill() const {
+	return reverse_fill;
+}
+
 FlowContainer::FlowContainer(bool p_vertical) {
 	vertical = p_vertical;
 }
@@ -338,11 +351,14 @@ void FlowContainer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_alignment"), &FlowContainer::get_alignment);
 	ClassDB::bind_method(D_METHOD("set_vertical", "vertical"), &FlowContainer::set_vertical);
 	ClassDB::bind_method(D_METHOD("is_vertical"), &FlowContainer::is_vertical);
+	ClassDB::bind_method(D_METHOD("set_reverse_fill", "reverse_fill"), &FlowContainer::set_reverse_fill);
+	ClassDB::bind_method(D_METHOD("is_reverse_fill"), &FlowContainer::is_reverse_fill);
 
 	BIND_ENUM_CONSTANT(ALIGNMENT_BEGIN);
 	BIND_ENUM_CONSTANT(ALIGNMENT_CENTER);
 	BIND_ENUM_CONSTANT(ALIGNMENT_END);
 
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "alignment", PROPERTY_HINT_ENUM, "Begin,Center,End"), "set_alignment", "get_alignment");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "reverse_fill"), "set_reverse_fill", "is_reverse_fill");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "vertical"), "set_vertical", "is_vertical");
 }
