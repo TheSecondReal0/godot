@@ -29,6 +29,7 @@
 /**************************************************************************/
 
 #include "gdscript_docgen.h"
+
 #include "../gdscript.h"
 
 using GDP = GDScriptParser;
@@ -235,14 +236,16 @@ void GDScriptDocGen::generate_docs(GDScript *p_script, const GDP::ClassNode *p_c
 
 				p_script->member_lines[name] = m_enum->start_line;
 
+				doc.enums[name] = m_enum->doc_description;
+
 				for (const GDP::EnumNode::Value &val : m_enum->values) {
 					DocData::ConstantDoc const_doc;
 					const_doc.name = val.identifier->name;
 					const_doc.value = String(Variant(val.value));
+					const_doc.is_value_valid = true;
 					const_doc.description = val.doc_description;
 					const_doc.enumeration = name;
 
-					doc.enums[const_doc.name] = const_doc.description;
 					doc.constants.push_back(const_doc);
 				}
 

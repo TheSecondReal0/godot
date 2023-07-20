@@ -642,6 +642,10 @@ void light_compute(vec3 N, vec3 L, vec3 V, float A, vec3 light_color, bool is_di
 #if defined(USE_LIGHT_SHADER_CODE)
 	// light is written by the light shader
 
+	highp mat4 model_matrix = world_transform;
+	mat4 projection_matrix = scene_data.projection_matrix;
+	mat4 inv_projection_matrix = scene_data.inv_projection_matrix;
+
 	vec3 normal = N;
 	vec3 light = L;
 	vec3 view = V;
@@ -771,7 +775,7 @@ void light_compute(vec3 N, vec3 L, vec3 V, float A, vec3 light_color, bool is_di
 	alpha = min(alpha, clamp(1.0 - attenuation, 0.0, 1.0));
 #endif
 
-#endif // LIGHT_CODE_USED
+#endif // USE_LIGHT_SHADER_CODE
 }
 
 float get_omni_spot_attenuation(float distance, float inv_range, float decay) {

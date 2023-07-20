@@ -305,6 +305,10 @@ Vector<StringName> AnimationNodeStateMachinePlayback::get_travel_path() const {
 	return path;
 }
 
+TypedArray<StringName> AnimationNodeStateMachinePlayback::_get_travel_path() const {
+	return Variant(get_travel_path()).operator Array();
+}
+
 float AnimationNodeStateMachinePlayback::get_current_play_pos() const {
 	return pos_current;
 }
@@ -897,18 +901,20 @@ bool AnimationNodeStateMachinePlayback::_transition_to_next_recursive(AnimationT
 	bool is_state_changed = false;
 
 	NextInfo next;
-	StringName transition_start = current;
+	Vector<StringName> transition_path;
+	transition_path.push_back(current);
 	while (true) {
 		next = _find_next(p_tree, p_state_machine);
-		if (next.node == transition_start) {
-			is_state_changed = false;
-			break; // Maybe infinity loop, do noting more.
+		if (transition_path.has(next.node)) {
+			WARN_PRINT_ONCE_ED("AnimationNodeStateMachinePlayback: " + base_path + "playback aborts the transition by detecting one or more looped transitions in the same frame to prevent to infinity loop. You may need to check the transition settings.");
+			break; // Maybe infinity loop, do nothing more.
 		}
 
 		if (!_can_transition_to_next(p_tree, p_state_machine, next, p_test_only)) {
 			break; // Finish transition.
 		}
 
+		transition_path.push_back(next.node);
 		is_state_changed = true;
 
 		// Setting for fading.
@@ -1180,7 +1186,7 @@ void AnimationNodeStateMachinePlayback::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_current_play_position"), &AnimationNodeStateMachinePlayback::get_current_play_pos);
 	ClassDB::bind_method(D_METHOD("get_current_length"), &AnimationNodeStateMachinePlayback::get_current_length);
 	ClassDB::bind_method(D_METHOD("get_fading_from_node"), &AnimationNodeStateMachinePlayback::get_fading_from_node);
-	ClassDB::bind_method(D_METHOD("get_travel_path"), &AnimationNodeStateMachinePlayback::get_travel_path);
+	ClassDB::bind_method(D_METHOD("get_travel_path"), &AnimationNodeStateMachinePlayback::_get_travel_path);
 }
 
 AnimationNodeStateMachinePlayback::AnimationNodeStateMachinePlayback() {

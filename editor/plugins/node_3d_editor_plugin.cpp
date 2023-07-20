@@ -296,10 +296,10 @@ void ViewportRotationControl::_notification(int p_what) {
 			axis_menu_options.clear();
 			axis_menu_options.push_back(Node3DEditorViewport::VIEW_RIGHT);
 			axis_menu_options.push_back(Node3DEditorViewport::VIEW_TOP);
-			axis_menu_options.push_back(Node3DEditorViewport::VIEW_REAR);
+			axis_menu_options.push_back(Node3DEditorViewport::VIEW_FRONT);
 			axis_menu_options.push_back(Node3DEditorViewport::VIEW_LEFT);
 			axis_menu_options.push_back(Node3DEditorViewport::VIEW_BOTTOM);
-			axis_menu_options.push_back(Node3DEditorViewport::VIEW_FRONT);
+			axis_menu_options.push_back(Node3DEditorViewport::VIEW_REAR);
 
 			axis_colors.clear();
 			axis_colors.push_back(get_theme_color(SNAME("axis_x_color"), SNAME("Editor")));
@@ -370,7 +370,7 @@ void ViewportRotationControl::_get_sorted_axis(Vector<Axis2D> &r_axis) {
 		Vector3 axis_3d = camera_basis.get_column(i);
 		Vector2i axis_vector = Vector2(axis_3d.x, -axis_3d.y) * radius;
 
-		if (Math::abs(axis_3d.z) < 1.0) {
+		if (Math::abs(axis_3d.z) <= 1.0) {
 			Axis2D pos_axis;
 			pos_axis.axis = i;
 			pos_axis.screen_point = center + axis_vector;
@@ -385,7 +385,7 @@ void ViewportRotationControl::_get_sorted_axis(Vector<Axis2D> &r_axis) {
 		} else {
 			// Special case when the camera is aligned with one axis
 			Axis2D axis;
-			axis.axis = i + (axis_3d.z < 0 ? 0 : 3);
+			axis.axis = i + (axis_3d.z <= 0 ? 0 : 3);
 			axis.screen_point = center;
 			axis.z_axis = 1.0;
 			r_axis.push_back(axis);
@@ -1583,6 +1583,22 @@ void Node3DEditorViewport::_list_select(Ref<InputEventMouseButton> b) {
 	}
 }
 
+// This is only active during instant transforms,
+// to capture and wrap mouse events outside the control.
+void Node3DEditorViewport::input(const Ref<InputEvent> &p_event) {
+	ERR_FAIL_COND(!_edit.instant);
+	Ref<InputEventMouseMotion> m = p_event;
+
+	if (m.is_valid()) {
+		if (_edit.mode == TRANSFORM_ROTATE) {
+			_edit.mouse_pos = m->get_position(); // rotate should not wrap
+		} else {
+			_edit.mouse_pos += _get_warped_mouse_motion(p_event);
+		}
+		update_transform(_get_key_modifier(m) == Key::SHIFT);
+	}
+}
+
 void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 	if (previewing) {
 		return; //do NONE
@@ -1906,7 +1922,8 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 
 	Ref<InputEventMouseMotion> m = p_event;
 
-	if (m.is_valid()) {
+	// Instant transforms process mouse motion in input() to handle wrapping.
+	if (m.is_valid() && !_edit.instant) {
 		_edit.mouse_pos = m->get_position();
 
 		if (spatial_editor->get_single_selected_node()) {
@@ -1956,7 +1973,7 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 			String n = _edit.gizmo->get_handle_name(_edit.gizmo_handle, _edit.gizmo_handle_secondary);
 			set_message(n + ": " + String(v));
 
-		} else if (m->get_button_mask().has_flag(MouseButtonMask::LEFT) || _edit.instant) {
+		} else if (m->get_button_mask().has_flag(MouseButtonMask::LEFT)) {
 			if (nav_scheme == NAVIGATION_MAYA && m->is_alt_pressed()) {
 				nav_mode = NAVIGATION_ORBIT;
 			} else if (nav_scheme == NAVIGATION_MODO && m->is_alt_pressed() && m->is_shift_pressed()) {
@@ -1993,7 +2010,7 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 					return;
 				}
 
-				update_transform(m->get_position(), _get_key_modifier(m) == Key::SHIFT);
+				update_transform(_get_key_modifier(m) == Key::SHIFT);
 			}
 		} else if (m->get_button_mask().has_flag(MouseButtonMask::RIGHT) || freelook_active) {
 			if (nav_scheme == NAVIGATION_MAYA && m->is_alt_pressed()) {
@@ -2096,7 +2113,7 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 
 		switch (nav_mode) {
 			case NAVIGATION_PAN: {
-				_nav_pan(pan_gesture, pan_gesture->get_delta());
+				_nav_pan(pan_gesture, -pan_gesture->get_delta());
 
 			} break;
 
@@ -2106,7 +2123,7 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 			} break;
 
 			case NAVIGATION_ORBIT: {
-				_nav_orbit(pan_gesture, pan_gesture->get_delta());
+				_nav_orbit(pan_gesture, -pan_gesture->get_delta());
 
 			} break;
 
@@ -2183,7 +2200,7 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 					_edit.plane = TRANSFORM_VIEW;
 					spatial_editor->set_local_coords_enabled(false);
 				}
-				update_transform(_edit.mouse_pos, Input::get_singleton()->is_key_pressed(Key::SHIFT));
+				update_transform(Input::get_singleton()->is_key_pressed(Key::SHIFT));
 				set_message(new_message, 2);
 				accept_event();
 				return;
@@ -2817,7 +2834,7 @@ void Node3DEditorViewport::_notification(int p_what) {
 
 				text += "\n";
 				text += vformat(TTR("Objects: %d\n"), viewport->get_render_info(Viewport::RENDER_INFO_TYPE_VISIBLE, Viewport::RENDER_INFO_OBJECTS_IN_FRAME));
-				text += vformat(TTR("Primitive Indices: %d\n"), viewport->get_render_info(Viewport::RENDER_INFO_TYPE_VISIBLE, Viewport::RENDER_INFO_PRIMITIVES_IN_FRAME));
+				text += vformat(TTR("Primitives: %d\n"), viewport->get_render_info(Viewport::RENDER_INFO_TYPE_VISIBLE, Viewport::RENDER_INFO_PRIMITIVES_IN_FRAME));
 				text += vformat(TTR("Draw Calls: %d"), viewport->get_render_info(Viewport::RENDER_INFO_TYPE_VISIBLE, Viewport::RENDER_INFO_DRAW_CALLS_IN_FRAME));
 
 				info_label->set_text(text);
@@ -3176,7 +3193,7 @@ void Node3DEditorViewport::_menu_option(int p_option) {
 		} break;
 		case VIEW_FRONT: {
 			cursor.x_rot = 0;
-			cursor.y_rot = Math_PI;
+			cursor.y_rot = 0;
 			set_message(TTR("Front View."), 2);
 			view_type = VIEW_TYPE_FRONT;
 			_set_auto_orthogonal();
@@ -3185,7 +3202,7 @@ void Node3DEditorViewport::_menu_option(int p_option) {
 		} break;
 		case VIEW_REAR: {
 			cursor.x_rot = 0;
-			cursor.y_rot = 0;
+			cursor.y_rot = Math_PI;
 			set_message(TTR("Rear View."), 2);
 			view_type = VIEW_TYPE_REAR;
 			_set_auto_orthogonal();
@@ -3299,6 +3316,7 @@ void Node3DEditorViewport::_menu_option(int p_option) {
 			orthogonal = false;
 			auto_orthogonal = false;
 			call_deferred(SNAME("update_transform_gizmo_view"));
+			_update_camera(0);
 			_update_name();
 
 		} break;
@@ -3308,8 +3326,8 @@ void Node3DEditorViewport::_menu_option(int p_option) {
 			orthogonal = true;
 			auto_orthogonal = false;
 			call_deferred(SNAME("update_transform_gizmo_view"));
+			_update_camera(0);
 			_update_name();
-
 		} break;
 		case VIEW_SWITCH_PERSPECTIVE_ORTHOGONAL: {
 			_menu_option(orthogonal ? VIEW_PERSPECTIVE : VIEW_ORTHOGONAL);
@@ -3328,13 +3346,7 @@ void Node3DEditorViewport::_menu_option(int p_option) {
 		case VIEW_LOCK_ROTATION: {
 			int idx = view_menu->get_popup()->get_item_index(VIEW_LOCK_ROTATION);
 			bool current = view_menu->get_popup()->is_item_checked(idx);
-			lock_rotation = !current;
-			view_menu->get_popup()->set_item_checked(idx, !current);
-			if (lock_rotation) {
-				locked_label->show();
-			} else {
-				locked_label->hide();
-			}
+			_set_lock_view_rotation(!current);
 
 		} break;
 		case VIEW_AUDIO_LISTENER: {
@@ -3402,7 +3414,7 @@ void Node3DEditorViewport::_menu_option(int p_option) {
 		case VIEW_DISPLAY_NORMAL:
 		case VIEW_DISPLAY_WIREFRAME:
 		case VIEW_DISPLAY_OVERDRAW:
-		case VIEW_DISPLAY_SHADELESS:
+		case VIEW_DISPLAY_UNSHADED:
 		case VIEW_DISPLAY_LIGHTING:
 		case VIEW_DISPLAY_NORMAL_BUFFER:
 		case VIEW_DISPLAY_DEBUG_SHADOW_ATLAS:
@@ -3429,7 +3441,7 @@ void Node3DEditorViewport::_menu_option(int p_option) {
 				VIEW_DISPLAY_NORMAL,
 				VIEW_DISPLAY_WIREFRAME,
 				VIEW_DISPLAY_OVERDRAW,
-				VIEW_DISPLAY_SHADELESS,
+				VIEW_DISPLAY_UNSHADED,
 				VIEW_DISPLAY_LIGHTING,
 				VIEW_DISPLAY_NORMAL_BUFFER,
 				VIEW_DISPLAY_DEBUG_SHADOW_ATLAS,
@@ -3778,15 +3790,9 @@ void Node3DEditorViewport::set_state(const Dictionary &p_state) {
 	if (p_state.has("distance")) {
 		cursor.distance = p_state["distance"];
 	}
-
-	if (p_state.has("use_orthogonal")) {
-		bool orth = p_state["use_orthogonal"];
-
-		if (orth) {
-			_menu_option(VIEW_ORTHOGONAL);
-		} else {
-			_menu_option(VIEW_PERSPECTIVE);
-		}
+	if (p_state.has("orthogonal")) {
+		bool orth = p_state["orthogonal"];
+		_menu_option(orth ? VIEW_ORTHOGONAL : VIEW_PERSPECTIVE);
 	}
 	if (p_state.has("view_type")) {
 		view_type = ViewType(p_state["view_type"].operator int());
@@ -3804,15 +3810,17 @@ void Node3DEditorViewport::set_state(const Dictionary &p_state) {
 		int display = p_state["display_mode"];
 
 		int idx = view_menu->get_popup()->get_item_index(display);
-		if (!view_menu->get_popup()->is_item_checked(idx)) {
+		if (idx != -1 && !view_menu->get_popup()->is_item_checked(idx)) {
 			_menu_option(display);
+		} else {
+			idx = display_submenu->get_item_index(display);
+			if (idx != -1 && !display_submenu->is_item_checked(idx)) {
+				_menu_option(display);
+			}
 		}
 	}
 	if (p_state.has("lock_rotation")) {
-		lock_rotation = p_state["lock_rotation"];
-
-		int idx = view_menu->get_popup()->get_item_index(VIEW_LOCK_ROTATION);
-		view_menu->get_popup()->set_item_checked(idx, lock_rotation);
+		_set_lock_view_rotation(p_state["lock_rotation"]);
 	}
 	if (p_state.has("use_environment")) {
 		bool env = p_state["use_environment"];
@@ -3864,6 +3872,7 @@ void Node3DEditorViewport::set_state(const Dictionary &p_state) {
 
 		int idx = view_menu->get_popup()->get_item_index(VIEW_HALF_RESOLUTION);
 		view_menu->get_popup()->set_item_checked(idx, half_res);
+		_update_shrink();
 	}
 	if (p_state.has("cinematic_preview")) {
 		previewing_cinema = p_state["cinematic_preview"];
@@ -3896,19 +3905,27 @@ Dictionary Node3DEditorViewport::get_state() const {
 	d["y_rotation"] = cursor.y_rot;
 	d["distance"] = cursor.distance;
 	d["use_environment"] = camera->get_environment().is_valid();
-	d["use_orthogonal"] = camera->get_projection() == Camera3D::PROJECTION_ORTHOGONAL;
+	d["orthogonal"] = camera->get_projection() == Camera3D::PROJECTION_ORTHOGONAL;
 	d["view_type"] = view_type;
 	d["auto_orthogonal"] = auto_orthogonal;
 	d["auto_orthogonal_enabled"] = view_menu->get_popup()->is_item_checked(view_menu->get_popup()->get_item_index(VIEW_AUTO_ORTHOGONAL));
-	if (view_menu->get_popup()->is_item_checked(view_menu->get_popup()->get_item_index(VIEW_DISPLAY_NORMAL))) {
-		d["display_mode"] = VIEW_DISPLAY_NORMAL;
-	} else if (view_menu->get_popup()->is_item_checked(view_menu->get_popup()->get_item_index(VIEW_DISPLAY_WIREFRAME))) {
-		d["display_mode"] = VIEW_DISPLAY_WIREFRAME;
-	} else if (view_menu->get_popup()->is_item_checked(view_menu->get_popup()->get_item_index(VIEW_DISPLAY_OVERDRAW))) {
-		d["display_mode"] = VIEW_DISPLAY_OVERDRAW;
-	} else if (view_menu->get_popup()->is_item_checked(view_menu->get_popup()->get_item_index(VIEW_DISPLAY_SHADELESS))) {
-		d["display_mode"] = VIEW_DISPLAY_SHADELESS;
+
+	// Find selected display mode.
+	int display_mode = VIEW_DISPLAY_NORMAL;
+	for (int i = VIEW_DISPLAY_NORMAL; i < VIEW_DISPLAY_ADVANCED; i++) {
+		if (view_menu->get_popup()->is_item_checked(view_menu->get_popup()->get_item_index(i))) {
+			display_mode = i;
+			break;
+		}
 	}
+	for (int i = VIEW_DISPLAY_ADVANCED + 1; i < VIEW_DISPLAY_MAX; i++) {
+		if (display_submenu->is_item_checked(display_submenu->get_item_index(i))) {
+			display_mode = i;
+			break;
+		}
+	}
+	d["display_mode"] = display_mode;
+
 	d["listener"] = viewport->is_audio_listener_3d();
 	d["doppler"] = view_menu->get_popup()->is_item_checked(view_menu->get_popup()->get_item_index(VIEW_AUDIO_DOPPLER));
 	d["gizmos"] = view_menu->get_popup()->is_item_checked(view_menu->get_popup()->get_item_index(VIEW_GIZMOS));
@@ -3919,9 +3936,7 @@ Dictionary Node3DEditorViewport::get_state() const {
 	if (previewing) {
 		d["previewing"] = EditorNode::get_singleton()->get_edited_scene()->get_path_to(previewing);
 	}
-	if (lock_rotation) {
-		d["lock_rotation"] = lock_rotation;
-	}
+	d["lock_rotation"] = lock_rotation;
 
 	return d;
 }
@@ -4517,9 +4532,11 @@ void Node3DEditorViewport::begin_transform(TransformMode p_mode, bool instant) {
 		_edit.instant = instant;
 		_edit.snap = spatial_editor->is_snap_enabled();
 		update_transform_gizmo_view();
+		set_process_input(instant);
 	}
 }
 
+// Apply the current transform operation.
 void Node3DEditorViewport::commit_transform() {
 	ERR_FAIL_COND(_edit.mode == TRANSFORM_NONE);
 	static const char *_transform_name[4] = {
@@ -4554,9 +4571,10 @@ void Node3DEditorViewport::commit_transform() {
 	set_message("");
 }
 
-void Node3DEditorViewport::update_transform(Point2 p_mousepos, bool p_shift) {
-	Vector3 ray_pos = _get_ray_pos(p_mousepos);
-	Vector3 ray = _get_ray(p_mousepos);
+// Update the current transform operation in response to an input.
+void Node3DEditorViewport::update_transform(bool p_shift) {
+	Vector3 ray_pos = _get_ray_pos(_edit.mouse_pos);
+	Vector3 ray = _get_ray(_edit.mouse_pos);
 	double snap = EDITOR_GET("interface/inspector/default_float_step");
 	int snap_step_decimals = Math::range_step_decimals(snap);
 
@@ -4896,12 +4914,14 @@ void Node3DEditorViewport::update_transform(Point2 p_mousepos, bool p_shift) {
 	}
 }
 
+// Perform cleanup after a transform operation is committed or cancelled.
 void Node3DEditorViewport::finish_transform() {
 	spatial_editor->set_local_coords_enabled(_edit.original_local);
 	_edit.mode = TRANSFORM_NONE;
 	_edit.instant = false;
 	spatial_editor->update_transform_gizmo();
 	surface->queue_redraw();
+	set_process_input(false);
 }
 
 // Register a shortcut and also add it as an input action with the same events.
@@ -4909,7 +4929,7 @@ void Node3DEditorViewport::register_shortcut_action(const String &p_path, const 
 	Ref<Shortcut> sc = ED_SHORTCUT(p_path, p_name, p_keycode, p_physical);
 	shortcut_changed_callback(sc, p_path);
 	// Connect to the change event on the shortcut so the input binding can be updated.
-	sc->connect("changed", callable_mp(this, &Node3DEditorViewport::shortcut_changed_callback).bind(sc, p_path));
+	sc->connect_changed(callable_mp(this, &Node3DEditorViewport::shortcut_changed_callback).bind(sc, p_path));
 }
 
 // Update the action in the InputMap to the provided shortcut events.
@@ -4923,6 +4943,17 @@ void Node3DEditorViewport::shortcut_changed_callback(const Ref<Shortcut> p_short
 
 	for (int i = 0; i < p_shortcut->get_events().size(); i++) {
 		im->action_add_event(p_shortcut_path, p_shortcut->get_events()[i]);
+	}
+}
+
+void Node3DEditorViewport::_set_lock_view_rotation(bool p_lock_rotation) {
+	lock_rotation = p_lock_rotation;
+	int idx = view_menu->get_popup()->get_item_index(VIEW_LOCK_ROTATION);
+	view_menu->get_popup()->set_item_checked(idx, p_lock_rotation);
+	if (p_lock_rotation) {
+		locked_label->show();
+	} else {
+		locked_label->hide();
 	}
 }
 
@@ -5005,7 +5036,7 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 	view_menu->get_popup()->add_radio_check_shortcut(ED_SHORTCUT("spatial_editor/view_display_wireframe", TTR("Display Wireframe")), VIEW_DISPLAY_WIREFRAME);
 	view_menu->get_popup()->add_radio_check_shortcut(ED_SHORTCUT("spatial_editor/view_display_overdraw", TTR("Display Overdraw")), VIEW_DISPLAY_OVERDRAW);
 	view_menu->get_popup()->add_radio_check_shortcut(ED_SHORTCUT("spatial_editor/view_display_lighting", TTR("Display Lighting")), VIEW_DISPLAY_LIGHTING);
-	view_menu->get_popup()->add_radio_check_shortcut(ED_SHORTCUT("spatial_editor/view_display_unshaded", TTR("Display Unshaded")), VIEW_DISPLAY_SHADELESS);
+	view_menu->get_popup()->add_radio_check_shortcut(ED_SHORTCUT("spatial_editor/view_display_unshaded", TTR("Display Unshaded")), VIEW_DISPLAY_UNSHADED);
 	view_menu->get_popup()->set_item_checked(view_menu->get_popup()->get_item_index(VIEW_DISPLAY_NORMAL), true);
 	display_submenu->set_hide_on_checkable_item_selection(false);
 	display_submenu->add_radio_check_item(TTR("Directional Shadow Splits"), VIEW_DISPLAY_DEBUG_PSSM_SPLITS);
@@ -5074,7 +5105,7 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 		const int normal_idx = view_menu->get_popup()->get_item_index(VIEW_DISPLAY_NORMAL);
 		const int wireframe_idx = view_menu->get_popup()->get_item_index(VIEW_DISPLAY_WIREFRAME);
 		const int overdraw_idx = view_menu->get_popup()->get_item_index(VIEW_DISPLAY_OVERDRAW);
-		const int shadeless_idx = view_menu->get_popup()->get_item_index(VIEW_DISPLAY_SHADELESS);
+		const int shadeless_idx = view_menu->get_popup()->get_item_index(VIEW_DISPLAY_UNSHADED);
 		const String unsupported_tooltip = TTR("Not available when using the OpenGL renderer.");
 
 		view_menu->get_popup()->set_item_disabled(normal_idx, true);
@@ -6978,9 +7009,9 @@ void Node3DEditor::_init_grid() {
 	// Offsets division_level for bigger or smaller grids.
 	// Default value is -0.2. -1.0 gives Blender-like behavior, 0.5 gives huge grids.
 	real_t division_level_bias = EDITOR_GET("editors/3d/grid_division_level_bias");
-	// Default largest grid size is 8^2 when primary_grid_steps is 8 (64m apart, so primary grid lines are 512m apart).
+	// Default largest grid size is 8^2 (default value is 2) when primary_grid_steps is 8 (64m apart, so primary grid lines are 512m apart).
 	int division_level_max = EDITOR_GET("editors/3d/grid_division_level_max");
-	// Default smallest grid size is 1cm, 10^-2 (default value is -2).
+	// Default smallest grid size is 8^0 (default value is 0) when primary_grid_steps is 8.
 	int division_level_min = EDITOR_GET("editors/3d/grid_division_level_min");
 	ERR_FAIL_COND_MSG(division_level_max < division_level_min, "The 3D grid's maximum division level cannot be lower than its minimum division level.");
 
@@ -7916,6 +7947,8 @@ void Node3DEditor::clear() {
 	}
 
 	view_menu->get_popup()->set_item_checked(view_menu->get_popup()->get_item_index(MENU_VIEW_GRID), true);
+	grid_enabled = true;
+	grid_init_draw = false;
 }
 
 void Node3DEditor::_sun_direction_draw() {
@@ -8373,8 +8406,6 @@ Node3DEditor::Node3DEditor() {
 	snap_scale->set_select_all_on_focus(true);
 	snap_dialog_vbc->add_margin_child(TTR("Scale Snap (%):"), snap_scale);
 
-	_snap_update();
-
 	/* SETTINGS DIALOG */
 
 	settings_dialog = memnew(ConfirmationDialog);
@@ -8578,9 +8609,11 @@ void fragment() {
 		sun_color->get_popup()->connect("about_to_popup", callable_mp(EditorNode::get_singleton(), &EditorNode::setup_color_picker).bind(sun_color->get_picker()));
 
 		sun_energy = memnew(EditorSpinSlider);
+		sun_energy->set_max(64.0);
+		sun_energy->set_min(0);
+		sun_energy->set_step(0.05);
 		sun_vb->add_margin_child(TTR("Sun Energy"), sun_energy);
 		sun_energy->connect("value_changed", callable_mp(this, &Node3DEditor::_preview_settings_changed).unbind(1));
-		sun_energy->set_max(64.0);
 
 		sun_max_distance = memnew(EditorSpinSlider);
 		sun_vb->add_margin_child(TTR("Shadow Max Distance"), sun_max_distance);
@@ -8629,8 +8662,10 @@ void fragment() {
 		environ_ground_color->get_popup()->connect("about_to_popup", callable_mp(EditorNode::get_singleton(), &EditorNode::setup_color_picker).bind(environ_ground_color->get_picker()));
 		environ_vb->add_margin_child(TTR("Ground Color"), environ_ground_color);
 		environ_energy = memnew(EditorSpinSlider);
-		environ_energy->connect("value_changed", callable_mp(this, &Node3DEditor::_preview_settings_changed).unbind(1));
 		environ_energy->set_max(8.0);
+		environ_energy->set_min(0);
+		environ_energy->set_step(0.05);
+		environ_energy->connect("value_changed", callable_mp(this, &Node3DEditor::_preview_settings_changed).unbind(1));
 		environ_vb->add_margin_child(TTR("Sky Energy"), environ_energy);
 		HBoxContainer *fx_vb = memnew(HBoxContainer);
 		fx_vb->set_h_size_flags(SIZE_EXPAND_FILL);
@@ -8690,7 +8725,7 @@ void fragment() {
 		_load_default_preview_settings();
 		_preview_settings_changed();
 	}
-	clear(); // Make sure values are initialized.
+	clear(); // Make sure values are initialized. Will call _snap_update() for us.
 }
 Node3DEditor::~Node3DEditor() {
 	memdelete(preview_node);

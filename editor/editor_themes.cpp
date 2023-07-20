@@ -36,6 +36,10 @@
 #include "editor/editor_icons.gen.h"
 #include "editor/editor_scale.h"
 #include "editor/editor_settings.h"
+#include "scene/resources/image_texture.h"
+#include "scene/resources/style_box_flat.h"
+#include "scene/resources/style_box_line.h"
+#include "scene/resources/style_box_texture.h"
 
 #include "modules/modules_enabled.gen.h" // For svg.
 #ifdef MODULE_SVG_ENABLED
@@ -63,7 +67,7 @@ void EditorColorMap::create() {
 
 	add_conversion_color_pair("#ffffff", "#414141"); // Pure white
 	add_conversion_color_pair("#000000", "#bfbfbf"); // Pure black
-	// Keep pure RGB colors as is, but list them for explicitly.
+	// Keep pure RGB colors as is, but list them for explicitness.
 	add_conversion_color_pair("#ff0000", "#ff0000"); // Pure red
 	add_conversion_color_pair("#00ff00", "#00ff00"); // Pure green
 	add_conversion_color_pair("#0000ff", "#0000ff"); // Pure blue
@@ -107,10 +111,11 @@ void EditorColorMap::create() {
 	add_conversion_color_pair("#dbee15", "#b7d10a"); // Color track yellow
 	add_conversion_color_pair("#288027", "#218309"); // Color track green
 
-	// Resource groups
+	// Other objects
 	add_conversion_color_pair("#ffca5f", "#fea900"); // Mesh resource (orange)
 	add_conversion_color_pair("#2998ff", "#68b6ff"); // Shape resource (blue)
 	add_conversion_color_pair("#a2d2ff", "#4998e3"); // Shape resource (light blue)
+	add_conversion_color_pair("#69c4d4", "#29a3cc"); // Input event highlight (light blue)
 
 	// Animation editor tracks
 	// The property track icon color is set by the common icon color.
@@ -136,22 +141,25 @@ void EditorColorMap::create() {
 	// Variant types
 	add_conversion_color_pair("#41ecad", "#25e3a0"); // Variant
 	add_conversion_color_pair("#6f91f0", "#6d8eeb"); // bool
-	add_conversion_color_pair("#5abbef", "#4fb2e9"); // int
+	add_conversion_color_pair("#5abbef", "#4fb2e9"); // int/uint
 	add_conversion_color_pair("#35d4f4", "#27ccf0"); // float
 	add_conversion_color_pair("#4593ec", "#4690e7"); // String
-	add_conversion_color_pair("#ac73f1", "#ad76ee"); // Vector2
-	add_conversion_color_pair("#f1738f", "#ee758e"); // Rect2
-	add_conversion_color_pair("#de66f0", "#dc6aed"); // Vector3
-	add_conversion_color_pair("#b9ec41", "#96ce1a"); // Transform2D
-	add_conversion_color_pair("#f74949", "#f77070"); // Plane
-	add_conversion_color_pair("#ec418e", "#ec69a3"); // Quaternion
 	add_conversion_color_pair("#ee5677", "#ee7991"); // AABB
+	add_conversion_color_pair("#e0e0e0", "#5a5a5a"); // Array
 	add_conversion_color_pair("#e1ec41", "#b2bb19"); // Basis
-	add_conversion_color_pair("#f68f45", "#f49047"); // Transform3D
-	add_conversion_color_pair("#417aec", "#6993ec"); // NodePath
-	add_conversion_color_pair("#41ec80", "#2ce573"); // RID
-	add_conversion_color_pair("#55f3e3", "#12d5c3"); // Object
 	add_conversion_color_pair("#54ed9e", "#57e99f"); // Dictionary
+	add_conversion_color_pair("#417aec", "#6993ec"); // NodePath
+	add_conversion_color_pair("#55f3e3", "#12d5c3"); // Object
+	add_conversion_color_pair("#f74949", "#f77070"); // Plane
+	add_conversion_color_pair("#44bd44", "#46b946"); // Projection
+	add_conversion_color_pair("#ec418e", "#ec69a3"); // Quaternion
+	add_conversion_color_pair("#f1738f", "#ee758e"); // Rect2
+	add_conversion_color_pair("#41ec80", "#2ce573"); // RID
+	add_conversion_color_pair("#b9ec41", "#96ce1a"); // Transform2D
+	add_conversion_color_pair("#f68f45", "#f49047"); // Transform3D
+	add_conversion_color_pair("#ac73f1", "#ad76ee"); // Vector2
+	add_conversion_color_pair("#de66f0", "#dc6aed"); // Vector3
+	add_conversion_color_pair("#f066bd", "#ed6abd"); // Vector4
 
 	// Visual shaders
 	add_conversion_color_pair("#77ce57", "#67c046"); // Vector funcs
@@ -240,8 +248,7 @@ static Ref<ImageTexture> editor_generate_icon(int p_index, float p_scale, float 
 	// Generating upsampled icons is slower, and the benefit is hardly visible
 	// with integer editor scales.
 	const bool upsample = !Math::is_equal_approx(Math::round(p_scale), p_scale);
-	ImageLoaderSVG img_loader;
-	Error err = img_loader.create_image_from_string(img, editor_icons_sources[p_index], p_scale, upsample, p_convert_colors);
+	Error err = ImageLoaderSVG::create_image_from_string(img, editor_icons_sources[p_index], p_scale, upsample, p_convert_colors);
 	ERR_FAIL_COND_V_MSG(err != OK, Ref<ImageTexture>(), "Failed generating icon, unsupported or invalid SVG data in editor theme.");
 	if (p_saturation != 1.0) {
 		img->adjust_bcs(1.0, 1.0, p_saturation);
@@ -255,7 +262,30 @@ static Ref<ImageTexture> editor_generate_icon(int p_index, float p_scale, float 
 	return ImageTexture::create_from_image(img);
 }
 
+float get_gizmo_handle_scale(const String &gizmo_handle_name = "") {
+	const float scale_gizmo_handles_for_touch = EDITOR_GET("interface/touchscreen/scale_gizmo_handles");
+	if (scale_gizmo_handles_for_touch > 1.0f) {
+		// The names of the icons that require additional scaling.
+		static HashSet<StringName> gizmo_to_scale;
+		if (gizmo_to_scale.is_empty()) {
+			gizmo_to_scale.insert("EditorHandle");
+			gizmo_to_scale.insert("EditorHandleAdd");
+			gizmo_to_scale.insert("EditorHandleDisabled");
+			gizmo_to_scale.insert("EditorCurveHandle");
+			gizmo_to_scale.insert("EditorPathSharpHandle");
+			gizmo_to_scale.insert("EditorPathSmoothHandle");
+		}
+
+		if (gizmo_to_scale.has(gizmo_handle_name)) {
+			return EDSCALE * scale_gizmo_handles_for_touch;
+		}
+	}
+
+	return EDSCALE;
+}
+
 void editor_register_and_generate_icons(Ref<Theme> p_theme, bool p_dark_theme, float p_icon_saturation, int p_thumb_size, bool p_only_thumbs = false) {
+	OS::get_singleton()->benchmark_begin_measure("editor_register_and_generate_icons_" + String((p_only_thumbs ? "with_only_thumbs" : "all")));
 	// Before we register the icons, we adjust their colors and saturation.
 	// Most icons follow the standard rules for color conversion to follow the editor
 	// theme's polarity (dark/light). We also adjust the saturation for most icons,
@@ -314,22 +344,23 @@ void editor_register_and_generate_icons(Ref<Theme> p_theme, bool p_dark_theme, f
 		for (int i = 0; i < editor_icons_count; i++) {
 			Ref<ImageTexture> icon;
 
-			if (accent_color_icons.has(editor_icons_names[i])) {
-				icon = editor_generate_icon(i, EDSCALE, 1.0, accent_color_map);
+			const String &editor_icon_name = editor_icons_names[i];
+			if (accent_color_icons.has(editor_icon_name)) {
+				icon = editor_generate_icon(i, get_gizmo_handle_scale(editor_icon_name), 1.0, accent_color_map);
 			} else {
 				float saturation = p_icon_saturation;
-				if (saturation_exceptions.has(editor_icons_names[i])) {
+				if (saturation_exceptions.has(editor_icon_name)) {
 					saturation = 1.0;
 				}
 
-				if (conversion_exceptions.has(editor_icons_names[i])) {
-					icon = editor_generate_icon(i, EDSCALE, saturation);
+				if (conversion_exceptions.has(editor_icon_name)) {
+					icon = editor_generate_icon(i, get_gizmo_handle_scale(editor_icon_name), saturation);
 				} else {
-					icon = editor_generate_icon(i, EDSCALE, saturation, color_conversion_map);
+					icon = editor_generate_icon(i, get_gizmo_handle_scale(editor_icon_name), saturation, color_conversion_map);
 				}
 			}
 
-			p_theme->set_icon(editor_icons_names[i], SNAME("EditorIcons"), icon);
+			p_theme->set_icon(editor_icon_name, SNAME("EditorIcons"), icon);
 		}
 	}
 
@@ -382,9 +413,11 @@ void editor_register_and_generate_icons(Ref<Theme> p_theme, bool p_dark_theme, f
 			p_theme->set_icon(editor_icons_names[index], SNAME("EditorIcons"), icon);
 		}
 	}
+	OS::get_singleton()->benchmark_end_measure("editor_register_and_generate_icons_" + String((p_only_thumbs ? "with_only_thumbs" : "all")));
 }
 
 Ref<Theme> create_editor_theme(const Ref<Theme> p_theme) {
+	OS::get_singleton()->benchmark_begin_measure("create_editor_theme");
 	Ref<Theme> theme = Ref<Theme>(memnew(Theme));
 
 	// Controls may rely on the scale for their internal drawing logic.
@@ -395,6 +428,7 @@ Ref<Theme> create_editor_theme(const Ref<Theme> p_theme) {
 	Color base_color = EDITOR_GET("interface/theme/base_color");
 	float contrast = EDITOR_GET("interface/theme/contrast");
 	bool increase_scrollbar_touch_area = EDITOR_GET("interface/touchscreen/increase_scrollbar_touch_area");
+	const float gizmo_handle_scale = EDITOR_GET("interface/touchscreen/scale_gizmo_handles");
 	bool draw_extra_borders = EDITOR_GET("interface/theme/draw_extra_borders");
 	float icon_saturation = EDITOR_GET("interface/theme/icon_saturation");
 	float relationship_line_opacity = EDITOR_GET("interface/theme/relationship_line_opacity");
@@ -594,6 +628,9 @@ Ref<Theme> create_editor_theme(const Ref<Theme> p_theme) {
 	theme->set_constant("class_icon_size", "Editor", 16 * EDSCALE);
 	theme->set_constant("dark_theme", "Editor", dark_theme);
 	theme->set_constant("color_picker_button_height", "Editor", 28 * EDSCALE);
+	theme->set_constant("gizmo_handle_scale", "Editor", gizmo_handle_scale);
+	theme->set_constant("window_border_margin", "Editor", 8);
+	theme->set_constant("top_bar_separation", "Editor", 8 * EDSCALE);
 
 	// Register editor icons.
 	// If the settings are comparable to the old theme, then just copy them over.
@@ -609,8 +646,10 @@ Ref<Theme> create_editor_theme(const Ref<Theme> p_theme) {
 		const bool prev_dark_theme = (bool)p_theme->get_constant(SNAME("dark_theme"), SNAME("Editor"));
 		const Color prev_accent_color = p_theme->get_color(SNAME("accent_color"), SNAME("Editor"));
 		const float prev_icon_saturation = p_theme->get_color(SNAME("icon_saturation"), SNAME("Editor")).r;
+		const float prev_gizmo_handle_scale = (float)p_theme->get_constant(SNAME("gizmo_handle_scale"), SNAME("Editor"));
 
 		keep_old_icons = (Math::is_equal_approx(prev_scale, EDSCALE) &&
+				Math::is_equal_approx(prev_gizmo_handle_scale, gizmo_handle_scale) &&
 				prev_dark_theme == dark_theme &&
 				prev_accent_color == accent_color &&
 				prev_icon_saturation == icon_saturation);
@@ -806,6 +845,8 @@ Ref<Theme> create_editor_theme(const Ref<Theme> p_theme) {
 
 	// Script Editor
 	theme->set_stylebox("ScriptEditorPanel", "EditorStyles", make_empty_stylebox(default_margin_size, 0, default_margin_size, default_margin_size));
+	theme->set_stylebox("ScriptEditorPanelFloating", "EditorStyles", make_empty_stylebox(0, 0, 0, 0));
+
 	theme->set_stylebox("ScriptEditor", "EditorStyles", make_empty_stylebox(0, 0, 0, 0));
 
 	// Launch Pad and Play buttons
@@ -902,6 +943,33 @@ Ref<Theme> create_editor_theme(const Ref<Theme> p_theme) {
 	editor_log_button_pressed->set_border_width(SIDE_BOTTOM, 2 * EDSCALE);
 	editor_log_button_pressed->set_border_color(accent_color);
 	theme->set_stylebox("pressed", "EditorLogFilterButton", editor_log_button_pressed);
+
+	// ProjectTag
+	{
+		theme->set_type_variation("ProjectTag", "Button");
+
+		Ref<StyleBoxFlat> tag = style_widget->duplicate();
+		tag->set_bg_color(dark_theme ? tag->get_bg_color().lightened(0.2) : tag->get_bg_color().darkened(0.2));
+		tag->set_corner_radius(CORNER_TOP_LEFT, 0);
+		tag->set_corner_radius(CORNER_BOTTOM_LEFT, 0);
+		tag->set_corner_radius(CORNER_TOP_RIGHT, 4);
+		tag->set_corner_radius(CORNER_BOTTOM_RIGHT, 4);
+		theme->set_stylebox("normal", "ProjectTag", tag);
+
+		tag = style_widget_hover->duplicate();
+		tag->set_corner_radius(CORNER_TOP_LEFT, 0);
+		tag->set_corner_radius(CORNER_BOTTOM_LEFT, 0);
+		tag->set_corner_radius(CORNER_TOP_RIGHT, 4);
+		tag->set_corner_radius(CORNER_BOTTOM_RIGHT, 4);
+		theme->set_stylebox("hover", "ProjectTag", tag);
+
+		tag = style_widget_pressed->duplicate();
+		tag->set_corner_radius(CORNER_TOP_LEFT, 0);
+		tag->set_corner_radius(CORNER_BOTTOM_LEFT, 0);
+		tag->set_corner_radius(CORNER_TOP_RIGHT, 4);
+		tag->set_corner_radius(CORNER_BOTTOM_RIGHT, 4);
+		theme->set_stylebox("pressed", "ProjectTag", tag);
+	}
 
 	// MenuBar
 	theme->set_stylebox("normal", "MenuBar", style_widget);
@@ -1211,6 +1279,10 @@ Ref<Theme> create_editor_theme(const Ref<Theme> p_theme) {
 	theme->set_constant("h_separation", "Tree", 6 * EDSCALE);
 	theme->set_constant("guide_width", "Tree", border_width);
 	theme->set_constant("item_margin", "Tree", 3 * default_margin_size * EDSCALE);
+	theme->set_constant("inner_item_margin_bottom", "Tree", (default_margin_size + extra_spacing) * EDSCALE);
+	theme->set_constant("inner_item_margin_left", "Tree", (default_margin_size + extra_spacing) * EDSCALE);
+	theme->set_constant("inner_item_margin_right", "Tree", (default_margin_size + extra_spacing) * EDSCALE);
+	theme->set_constant("inner_item_margin_top", "Tree", (default_margin_size + extra_spacing) * EDSCALE);
 	theme->set_constant("button_margin", "Tree", default_margin_size * EDSCALE);
 	theme->set_constant("scroll_border", "Tree", 40 * EDSCALE);
 	theme->set_constant("scroll_speed", "Tree", 12);
@@ -1537,6 +1609,7 @@ Ref<Theme> create_editor_theme(const Ref<Theme> p_theme) {
 	style_window->set_border_width(SIDE_TOP, 24 * EDSCALE);
 	style_window->set_expand_margin(SIDE_TOP, 24 * EDSCALE);
 	theme->set_stylebox("embedded_border", "Window", style_window);
+	theme->set_stylebox("embedded_unfocused_border", "Window", style_window);
 
 	theme->set_color("title_color", "Window", font_color);
 	theme->set_icon("close", "Window", theme->get_icon(SNAME("GuiClose"), SNAME("EditorIcons")));
@@ -1845,7 +1918,10 @@ Ref<Theme> create_editor_theme(const Ref<Theme> p_theme) {
 
 	theme->set_icon("close", "GraphNode", theme->get_icon(SNAME("GuiCloseCustomizable"), SNAME("EditorIcons")));
 	theme->set_icon("resizer", "GraphNode", theme->get_icon(SNAME("GuiResizer"), SNAME("EditorIcons")));
-	theme->set_icon("port", "GraphNode", theme->get_icon(SNAME("GuiGraphNodePort"), SNAME("EditorIcons")));
+	Ref<ImageTexture> port_icon = theme->get_icon(SNAME("GuiGraphNodePort"), SNAME("EditorIcons"));
+	// The true size is 24x24 This is necessary for sharp port icons at high zoom levels in GraphEdit (up to ~200%).
+	port_icon->set_size_override(Size2(12, 12));
+	theme->set_icon("port", "GraphNode", port_icon);
 
 	theme->set_font("title_font", "GraphNode", theme->get_font(SNAME("main_bold_msdf"), SNAME("EditorFonts")));
 
@@ -2061,10 +2137,13 @@ Ref<Theme> create_editor_theme(const Ref<Theme> p_theme) {
 	theme->set_color("search_result_color", "CodeEdit", EDITOR_GET("text_editor/theme/highlighting/search_result_color"));
 	theme->set_color("search_result_border_color", "CodeEdit", EDITOR_GET("text_editor/theme/highlighting/search_result_border_color"));
 
+	OS::get_singleton()->benchmark_end_measure("create_editor_theme");
+
 	return theme;
 }
 
 Ref<Theme> create_custom_theme(const Ref<Theme> p_theme) {
+	OS::get_singleton()->benchmark_begin_measure("create_custom_theme");
 	Ref<Theme> theme = create_editor_theme(p_theme);
 
 	const String custom_theme_path = EDITOR_GET("interface/theme/custom_theme");
@@ -2075,6 +2154,7 @@ Ref<Theme> create_custom_theme(const Ref<Theme> p_theme) {
 		}
 	}
 
+	OS::get_singleton()->benchmark_end_measure("create_custom_theme");
 	return theme;
 }
 
